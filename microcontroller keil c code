@@ -1,0 +1,96 @@
+#include<reg52.h>
+#include<string.h>
+#include<stdio.h>
+#define LCD P0
+sbit m1 = P2^0;
+sbit m2 = P2^1; .
+sbit m3 = P2^2;
+sbit m4 = P2^3;
+sbit Pm5 = P2^4;
+sbit Pm6 = P2^5;
+sbit Pm7 = P2^6;
+sbit Pm8 = P2^7;
+void init_lcd(void); // Initializes the LCD.
+void cmd_lcd(unsigned char); // Sends command instructions to the LCD.
+void lcd_data(unsigned char); // Sends data (characters) to be displayed on the LCD.
+void display_lcd(unsigned char *); // Displays a string on the LCD.
+void delay(unsigned int); // Generates a delay.
+unsigned char str1[12];
+unsigned char i = 0, j = 0;
+char c[10] = {'*', 'b', 'u', 'l', 'b', 'o', 'n', '#'}; // Command for "bulb on".
+char c1[10] = {'*', 'b', 'u', 'l', 'b', 'o', 'f', 'f', '#'}; // Command for "bulb off".
+char c2[10] = {'*', 'f', 'a', 'n', 'o', 'n', '#'}; // Command for "fan on".
+char c3[10] = {'*', 'f', 'a', 'n', 'o', 'f', 'f', '#'}; // Command for "fan off".
+void phonenum();
+void main() {
+m1 = m2 = m3 = m4 = 0;
+Pm5 = Pm6 = Pm7 = Pm8 = 0;
+P2 = 0x00;
+TMOD = 0x20;
+SCON = 0x50;
+TH1 = 0xFD;
+TR1 = 1;
+TH0 = 0x00; TL0 = 0x00;
+IE = 0x91;
+init_lcd();
+cmd_lcd(0x80);
+display_lcd("BT BASED home");
+cmd_lcd(0xC0);
+display_lcd("automation");
+delay(500);
+cmd_lcd(0x01);
+while(1) {
+EA = 1; ES = 1; EA = 0;
+if(RI) { phonenum(); }
+}}
+void phonenum(void) interrupt 4 {
+unsigned char ii;
+st1:
+do {
+while(RI == 0);
+str1[i] = SBUF;
+RI = 0;
+j = i;
+i++;
+} while (str1[j] != '#');
+cmd_lcd(0xC0);
+display_lcd(str1);
+delay(10);
+cmd_lcd(0x01);
+if ((str1[0] == c[0]) && (str1[1] == c[1]) && (str1[2] == c[2]) &&
+(str1[3] == c[3]) && (str1[4] == c[4]) && (str1[5] == c[5]) &&
+(str1[6] == c[6]) && (str1[7] == c[7])) {
+m1 = 1; m2 = 0; m3 = 1; m4 = 0;
+cmd_lcd(0xC0); display_lcd("bulb on");
+delay(10); i = 0; j = 0;
+for(ii = 0; ii < 12; ii++) { str1[ii] = 0; }
+goto st1;
+}
+}
+void init_lcd(void) {
+cmd_lcd(0x28);
+cmd_lcd(0x0C);
+cmd_lcd(0x06);
+cmd_lcd(0x01);
+}
+void cmd_lcd(unsigned char var) {
+LCD = ((var & 0xF0) | 0x08);
+LCD = 0;
+LCD = ((var << 4) | 0x08);
+LCD = 0;
+delay(2);
+}
+void data_lcd(unsigned char var) {
+LCD = ((var & 0xF0) | 0x0A);
+LCD = 0;
+LCD = ((var << 4) | 0x0A);
+LCD = 0;
+delay(2);
+}
+void display_lcd(unsigned char *s) {
+while(*s) { data_lcd(*s++); }
+}
+void delay(unsigned int i) {
+unsigned int j;
+for(; i > 0; i--) { for(j = 0; j < 1275; j++); }
+}
