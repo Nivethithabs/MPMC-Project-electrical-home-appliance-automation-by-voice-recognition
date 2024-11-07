@@ -1,0 +1,128 @@
+; Constants for Port and Bit Assignments
+LCD EQU P0 ; Port 0 assigned as LCD data port to send commands/data to LCD.
+m1 EQU P2.0 ; Bit 0 of Port 2 assigned to control Device 1 (e.g., bulb control).
+m2 EQU P2.1 ; Bit 1 of Port 2 for Device 2 control.
+m3 EQU P2.2 ; Bit 2 of Port 2 for Device 3 control.
+m4 EQU P2.3 ; Bit 3 of Port 2 for Device 4 control.
+; Registers for String Buffer and Counters
+str1 DS 12 ; Allocate 12 bytes for `str1` 
+i DS 1 ; `i` acts as the index for the string buffer.
+j DS 1 ; `j` is used as a temporary index for string manipulation.
+ii DS 1 ; Loop counter for clearing the buffer when needed.
+; Initialization of Program
+ORG 0000H
+LJMP MAIN ; Jump to the main program start to avoid executing code directly in
+interrupt vectors.
+; Interrupt Vector for Serial Communication
+ORG 0023H
+LJMP PHONENUM ; Serial interrupt vector jumps to the PHONENUM subroutine to
+handle serial data.
+; -------------------------
+; MAIN Routine - System Initialization and LCD Setup
+MAIN:
+CLR A ; Clear the Accumulator (A) to reset any previous data.
+MOV P2, #00H ; Set all bits of Port 2 to 0, initializing all devices connected to m1,
+m2, m3, m4 to OFF.
+; Timer and Serial Communication Setup
+MOV TMOD, #20H ; Configure Timer 1 in Mode 2 (8-bit auto-reload).
+; This mode is commonly used for setting up UART baud rates.
+MOV SCON, #50H ; Serial mode 1 (8-bit UART), enabling receiver.
+; REN (Receive Enable) is set to allow data reception.
+MOV TH1, #0FDH ; Set Timer 1 high register to 0xFD to achieve a baud rate of 9600
+bps for Bluetooth communication.
+SETB TR1 ; Start Timer 1, beginning the auto-reload operation for UART baud
+rate timing.
+MOV IE, #91H ; Enable global (EA) and serial interrupt (ES).
+; 1001 0001 -> EA = 1, ES = 1.
+; LCD Initialization
+ACALL INIT_LCD ; Call the subroutine to initialize the LCD.
+; Display Initial Message on LCD
+MOV DPTR, #MSG1 ; Load address of the first message into DPTR.
+ACALL DISPLAY_LCD ; Display "BT BASED home" on the LCD.
+ACALL DELAY ; Delay for readability.
+MOV DPTR, #MSG2 ; Load address of the second message.
+ACALL DISPLAY_LCD ; Display "automation" on the LCD.
+ACALL DELAY ; Delay for readability.
+; Clear LCD after displaying initial messages.
+MOV A, #01H
+ACALL CMD_LCD ; Send the "clear display" command to LCD.
+SJMP MAIN_LOOP ; Main loop where it waits for interrupt-driven input.
+; -------------------------
+; PHONENUM Routine - Serial Interrupt for Command Processing
+PHONENUM:
+MOV A, SBUF ; Read data from Serial Buffer (SBUF) into A.
+MOV str1[i], A ; Store the received character in the `str1` buffer.
+INC i ; Increment `i` to point to the next position in `str1`.
+CLR RI ; Clear the Receive Interrupt flag to signal data has been read.
+MOV A, str1[i] ; Load the current character for end-check.
+CJNE A, #'#', CHECK_NEXT ; Check if the end character ('#') is received.
+SJMP PROCESS_COMMAND ; If '#' found, jump to process the command.
+CHECK_NEXT:
+MOV j, i ; Update temporary counter `j` for handling strings.
+RETI ; Return from interrupt if end of command not reached.
+PROCESS_COMMAND:
+; Example of Command Matching - "bulbon" command
+MOV DPTR, #C ; Load address of "bulbon" command in `DPTR`.
+MOV R0, #0 ; Set R0 as the index for command comparison.
+MOV R1, #0 ; Initialize buffer index R1.
+MATCH_LOOP:
+MOVX A, @DPTR ; Load the next character from command memory.
+MOV B, str1[R1] ; Load corresponding character from the buffer.
+CJNE A, B, MISMATCH ; If characters don't match, jump to `MISMATCH`.
+INC DPTR ; Advance to the next character in the "bulbon" command.
+INC R1
+CJNE A, #0, MATCH_LOOP ; Continue if not end of string.
+; If command matches, execute 'bulbon' action.
+SETB m1 ; Set m1 (bulb control) ON.
+MOV DPTR, #ON_MSG ; Point to message for "bulb on".
+ACALL DISPLAY_LCD ; Display "bulb on" on the LCD.
+SJMP CLEAR_STR ; Clear buffer and return to start.
+MISMATCH:
+; Similar structure for other commands.
+CLEAR_STR:
+MOV i, #0 ; Reset `i` index for new command.
+CLR j ; Clear temporary counter `j`.
+CLR R1 ; Clear R1 index.
+MOV DPTR, #str1 ; Point DPTR to start of buffer for clearing.
+MOV A, #0
+CLEAR_LOOP:
+MOVX @DPTR, A ; Write zero to clear buffer.
+INC DPTR
+DJNZ ii, CLEAR_LOOP ; Loop until buffer is cleared.
+RETI ; Return from interrupt.
+; -------------------------
+; LCD Command Functions
+CMD_LCD:
+; Send the high nibble of a command to LCD.
+MOV LCD, A ; Move high nibble of A to LCD.
+ORL LCD, #08H ; Set Enable bit to latch high nibble.
+CLR LCD ; Clear to complete the command.
+RET
+DATA_LCD:
+; Similar to CMD_LCD, used for sending data characters to LCD.
+RET
+DISPLAY_LCD:
+MOVX A, @DPTR ; Load character from display string into A.
+JZ END_DISPLAY ; If null (end of string), exit.
+ACALL DATA_LCD ; Display character on LCD.
+INC DPTR
+SJMP DISPLAY_LCD
+END_DISPLAY:
+RET
+; -------------------------
+; DELAY Subroutine
+DELAY:
+MOV R0, #200 ; Outer delay loop counter.
+DELAY_LOOP1:
+MOV R1, #200 ; Inner delay loop counter.
+DELAY_LOOP2:
+DJNZ R1, DELAY_LOOP2 ; Inner delay loop.
+DJNZ R0, DELAY_LOOP1 ; Outer delay loop.
+RET
+; -------------------------
+; Data Definitions (Strings and Command Templates)
+MSG1: DB "BT BASED home", 0 ; Initial message 1
+MSG2: DB "automation", 0 ; Initial message 2
+ON_MSG: DB "bulb on", 0 ; Message for "bulb on" state
+C: DB "*bulbon#", 0 ; Command template for "bulbon" command
+END
